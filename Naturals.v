@@ -135,6 +135,18 @@ Proof.
 Qed.
 
 
+
+Lemma aux'' (n: nat): increase_free_variables (church_nat_aux n) 0 2 = church_nat_aux n.
+Proof.
+  induction n.
+  - now simpl.
+  - unfold church_nat_aux; fold church_nat_aux.
+    simpl.
+    now rewrite IHn.
+Qed.
+
+
+
 Require Import Coq.Classes.Morphisms. (* to use f_equiv if necessary *)
 
 Compute (replace (church_nat_aux 0) (# 1) 1).
@@ -258,6 +270,30 @@ Proof.
 Qed.
 
 
+Lemma repl_lemma'' (n: nat): replace (church_nat_aux n) (\ (\ church_nat_aux 0)) 2 = church_nat_aux n.
+Proof.
+  induction n.
+  - easy.
+  - unfold church_nat_aux; fold church_nat_aux.
+    simpl.
+    repeat f_equal.
+    unfold church_nat_aux in IHn at 2.
+    apply IHn.
+Qed.
+
+Lemma repl_lemma''' (n: nat): replace (church_nat_aux n) $ plus (\ (\ church_nat_aux 0)) 3 = church_nat_aux n.
+Proof.
+  induction n.
+  - easy.
+  - unfold church_nat_aux; fold church_nat_aux.
+    simpl.
+    repeat f_equal.
+    unfold church_nat_aux in IHn at 2.
+    apply IHn.
+Qed.
+
+
+
 Lemma zero_neutral: forall (n: nat), $ $ plus (church_nat n) (church_nat 0) == church_nat n.
 Proof.
   intros.
@@ -325,21 +361,107 @@ Proof.
       unfold church_nat;
       repeat f_equal;
       apply repl_lemma' | ].
-    transitivity (($ (\ (\ (\ $ (# 1) $ $ (# 2) (# 1) (# 0)))) $ $ (church_nat n0) (\ (\ (\ $ (# 1) $ $ (# 2) (# 1) (# 0)))) (church_nat 0))).
-    
+    transitivity (($ (\ (\ (\ $ (# 1) $ $ (# 2) (# 1) (# 0)))) $ $ (church_nat n0) (\ (\ (\ $ (# 1) $ $ (# 2) (# 1) (# 0)))) (church_nat 0)));
+    [ apply CStep;
+      exists PRoot;
+      simpl;
+      repeat f_equal;
+      unfold church_nat;
+      repeat f_equal;
+      apply repl_lemma'' | ].
+    transitivity (((\ (\ $ (# 1) $ $ ($ $ (church_nat n0) (\ (\ (\ $ (# 1) $ $ (# 2) (# 1) (# 0)))) (church_nat 0)) (# 1) (# 0)))));
+    [ apply CStep;
+      exists PRoot;
+      simpl;
+      repeat f_equal;
+      unfold church_nat;
+      repeat f_equal;
+      apply aux | ].
+    reflexivity.
+Qed.
 
+Definition mult := \\$ $ (#1) ($ plus #0) (church_nat 0).
 
-
-      \ (\ $ (# 1) $ $ $ $ (church_nat n0) (\ (\ (\ $ (# 1) $ $ (# 2) (# 1) (# 0)))) (church_nat 0) (# 1) (# 0))
-
-
-
-church_succ = \\\ $ (#1) ($ ($ (#2) (#1)) (#0))
-
-$ $ $ church_succ (\ (\ replace (church_nat_aux n0) (church_nat 0) 2)) church_succ (church_nat 0) =
-$ $ $ church_succ (church_nat n0) church_succ (church_nat n0)
-
-
-    Compute beta $ $ plus $ church_succ $ $ plus (church_nat n0) (church_nat 0) (church_nat 0) (PLeft PRoot).
-    reduct (PRoot PLeft).
-
+Lemma mult_nil (n: nat): $ $ mult (church_nat n) (church_nat 0) == church_nat 0.
+Proof.
+  unfold mult.
+  transitivity ($ ((\ $ $ ((church_nat n)) $ plus (# 0) (church_nat 0))) (church_nat 0));
+  [ apply CStep;
+    exists (PLeft PRoot);
+    simpl;
+    repeat f_equal;
+    unfold church_nat;
+    repeat f_equal;
+    apply aux' | ].
+  transitivity ((($ $ ((church_nat n)) $ plus (church_nat 0) (church_nat 0))));
+  [ apply CStep;
+    exists (PRoot);
+    simpl;
+    repeat f_equal;
+    unfold church_nat;
+    repeat f_equal;
+    apply repl_lemma | ].
+  induction n.
+  - common_reduct.
+  - rewrite <- church_succ_respects_nat.
+    unfold church_succ.
+    transitivity ($ $ ((\ (\ $ (# 1) $ $ ((church_nat n0)) (# 1) (# 0)))) $ plus (church_nat 0) (church_nat 0));
+    [ apply CStep;
+      exists (PLeft (PLeft PRoot));
+      simpl;
+      repeat f_equal;
+      unfold church_nat;
+      repeat f_equal;
+      apply aux | ].
+    transitivity ($ ((\ $ ($ plus (church_nat 0)) $ $ (church_nat n0) ($ plus (church_nat 0)) (# 0))) (church_nat 0));
+    [ apply CStep;
+      exists (PLeft (PRoot));
+      simpl;
+      repeat f_equal;
+      unfold church_nat;
+      repeat f_equal;
+      apply repl_lemma''' | ].
+    transitivity (($ $ plus (church_nat 0) $ $ (church_nat n0) $ plus (church_nat 0) ((church_nat 0))) );
+    [ apply CStep;
+      exists ((PRoot));
+      simpl;
+      repeat f_equal;
+      unfold church_nat;
+      repeat f_equal;
+      apply repl_lemma | ].
+    unfold plus at 1.
+    transitivity ($ ((\ $ $ (church_nat 0) church_succ (# 0))) $ $ (church_nat n0) $ plus (church_nat 0) (church_nat 0));
+    [ apply CStep;
+      exists (PLeft (PRoot));
+      simpl;
+      repeat f_equal;
+      unfold church_nat;
+      repeat f_equal;
+      apply repl_lemma | ].
+    transitivity (($ $ (church_nat 0) church_succ ($ $ (church_nat n0) $ plus (church_nat 0) (church_nat 0))));
+    [ apply CStep;
+      exists ((PRoot));
+      simpl;
+      repeat f_equal;
+      unfold church_nat;
+      repeat f_equal;
+      apply aux'' | ].
+    unfold church_nat at 1.
+    unfold church_nat_aux.
+    transitivity ($ ((\ # 0)) $ $ (church_nat n0) $ plus (church_nat 0) (church_nat 0));
+    [ apply CStep;
+      exists (PLeft (PRoot));
+      simpl;
+      repeat f_equal;
+      unfold church_nat;
+      repeat f_equal | ].
+    transitivity ($ $ (church_nat n0) $ plus (church_nat 0) (church_nat 0));
+    [ apply CStep;
+      exists ((PRoot));
+      simpl;
+      repeat f_equal;
+      unfold church_nat;
+      repeat f_equal;
+      apply aux'' | ].
+      apply IHn.
+Qed.
