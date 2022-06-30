@@ -9,17 +9,6 @@ Inductive term :=
 | App: term -> term -> term
 .
 
-(* Definition eqDec_term (p q: term) : {p = q} + {p <> q}.
-  decide equality. (* For term *)
-  decide equality. (* For nat, on which term depends *)
-Defined. *)
-
-Scheme Equality for term.
-
-
-(* TODO check indexing by nats to count nr of free vars *)
-(* https://staff.fnwi.uva.nl/t.w.j.kappe/teaching/coq/materials/lecture-7c.v *)
-
 Notation "# n" := (Var n) (at level 10).
 Notation "\ p" := (Abs p) (at level 20).
 (* u $ v $ w = (u $ v) $ w *)
@@ -35,7 +24,6 @@ Module test_term.
   (* Identity function λx. x *)
   Definition id: term := \#0.
   Unset Printing Notations.
-  (* ASK this is still printing with Notations somewhy *)
   Print id.
   Set Printing Notations.
 End test_term.

@@ -3,7 +3,6 @@ Require Import Coq.Arith.PeanoNat.
 
 Require Import Basics.
 
-
 Require Import Coq.Arith.Compare_dec.
 
 Fixpoint increase_free_variables (p: term) (increment level: nat): term :=
@@ -31,79 +30,26 @@ Fixpoint replace (body argument: term) (level: nat): term :=
   end
 .
 
-Definition prova := $ (\ \ $ ($ #3 #1) (\ $ #0 #2)) (\ $ #4 #0).
-Compute replace (\ $ ($ #3 #1) (\ $ #0 #2)) (\ $ #4 #0) 0.
-(* The final result should be \ $ $ (# 2) (\ $ (# 5) (# 0)) (\ $ (# 0) (\ $ (# 6) (# 0))) *)
-Compute replace (\ $ ($ #3 #1) (\ \ $ #1 #3)) (\ $ #4 #0) 0.
-
 Module test_replace.
+  Compute replace (\ $ ($ #3 #1) (\ $ #0 #2)) (\ $ #4 #0) 0.
+  (* The final result should be \ $ $ (# 2) (\ $ (# 5) (# 0)) (\ $ (# 0) (\ $ (# 6) (# 0))) *)
+  Compute replace (\ $ ($ #3 #1) (\ \ $ #1 #3)) (\ $ #4 #0) 0.
+
   Definition test: term := replace (\#1) (\#4) 0.
-  Compute test. (* -> \ (\ # 4) *)
+  Compute test. (* -> \ (\ # 5) *)
 End test_replace.
 
-Inductive index: term -> Type :=
-| Root: forall t, index t
-| SubAbs: forall t, index t -> index (\t)
-| SubAppLeft: forall t t', index t -> index ($ t t')
-| SubAppRight: forall t t', index t -> index ($ t' t)
-.
-
-(* TODO fix level of anchor for it to work, Cmd+F "Root _" *)
-Notation "⚓" := (Root _) (at level 50). (* Anchor *)
-Notation "§ x" := (SubAbs _ x) (at level 40).
-Notation "← x" := (SubAppLeft _ _ x) (at level 40).
-Notation "→ x" := (SubAppRight _ _ x) (at level 40).
-
-
-Definition t := \\ $ (\#0) #1.
-Definition t_: index t := Root _.
-Definition t_0: index t := SubAbs _ (Root _).
-Definition t_0_0: index t := SubAbs _ (SubAbs _ (Root _)).
-Definition t_0_0_1: index t := (SubAbs _ (SubAbs _ (SubAppRight _ _ (Root _)))).
-
-Definition t_0_0_1': index t := § § → ⚓.
-
-Fixpoint subterm (p: term) (i: index p): term :=
-  match i with
-  | Root p => p
-  | SubAbs q j => subterm q j
-  | SubAppLeft q r j => subterm q j
-  | SubAppRight q r j => subterm q j
-  end
-.
-
-Compute subterm t t_0_0_1'.
-
-Compute subterm t t_.
-
-(* Observe that it's technically not enough to just check whether
-beta changes a term (e.g. beta p ~= p): there are redeces that return
-the same term, e.g. omega omega -> omega omega *)
-(* Definition is_redex (p: term) (i: index p): Prop :=
-  match p with
-  | $ (\q) r => True
-  | _ => False
-  end
-. *)
-
-
-(* TODO do we even need this? *)
-(* Definition redex (p: term) := {i : index p & is_redex p i}. *)
-
-
-(* Definition redex (p: term) := exists (i: index p), is_redex p i. *)
-(* Compute beta t { t_0_0 | proof_that_that_index_is_a_redex } . *)
 
 
 
-Inductive route :=
+Inductive path :=
 | PRoot
-| PAbs: route -> route
-| PLeft: route -> route
-| PRight: route -> route
+| PAbs: path -> path
+| PLeft: path -> path
+| PRight: path -> path
 .
 
-Fixpoint beta (p: term) (rt: route): option term :=
+Fixpoint beta (p: term) (rt: path): option term :=
   match p, rt with
 
   | #n, _ => None (* No reduction/Invalid path *)
@@ -134,14 +80,15 @@ Fixpoint beta (p: term) (rt: route): option term :=
 
 
 Definition beta_step (p p': term): Prop :=
-  exists (rt: route), beta p rt = Some p'.
+  exists (rt: path), beta p rt = Some p'.
 
-Lemma test: beta_step t (\\#1).
-Proof.
-  unfold beta_step.
-  exists (PAbs (PAbs PRoot)).
-  reflexivity.
-Qed.
+Module test_beta_step.
+  Goal beta_step ($ \(#0) \\(#1)) (\\#1).
+    unfold beta_step.
+    exists PRoot.
+    reflexivity.
+  Qed.
+End test_beta_step.
 
 
 (* Leftmost-outermost is a normalizing reduction strategy for lc *)
@@ -271,40 +218,8 @@ Add Parametric Relation: term beta_equiv
 Require Import Coq.Setoids.Setoid.
 
 
-Add Parametric Morphism: Abs with
-  signature beta_equiv ==>
-    beta_equiv
-  as beta_mor_abs.
-Proof.
-  intros.
-  unfold "==" in *.
-  induction H.
-  - apply CStep.
-    unfold beta_step in *.
-    Admitted.
-    (* TODO IMPORTANT fix this *)
-    (* simpl.
-    destruct (term_eq_dec (\x) (\x)).
-    + induction (beta_reducts x).
-      * now exfalso.
-      * simpl.
-        induction H.
-        -- left.
-           now rewrite H.
-        -- right.
-           now apply IHl.
-    + intuition.
-  - apply CRefl.
-  - now apply CSym.
-  - now apply CTrans with (x' := \ x').
-Qed. *)
 
-Add Parametric Morphism: App with
-  signature beta_equiv ==>
-    beta_equiv ==>
-    beta_equiv
-  as beta_mor_app.
-Admitted. (* TODO IMPORTANT complete this *)
+(* TODO IMPORTANT complete this *)
 
 
 (* TODO idea write a tactic for defining a reduction path
@@ -312,7 +227,7 @@ something that simplifies this process above ^ of stating transitivity paths *)
 
 
 
-(* Fixpoint build_indices (p: term): list route :=
+(* Fixpoint build_indices (p: term): list path :=
   match p with
   | #n => [ PRoot ]
   | \q => PRoot :: map PAbs (build_indices q)
@@ -322,7 +237,7 @@ something that simplifies this process above ^ of stating transitivity paths *)
 
 (* Compute build_indices (\\$#0#1). *)
 
-Fixpoint leftmost_outermost_step (p: term): option (term * route) :=
+Fixpoint leftmost_outermost_step (p: term): option (term * path) :=
   match p with
   | #n => None
   | \q => let q' := leftmost_outermost_step q in match q' with
@@ -361,7 +276,7 @@ Ltac reduct rt := match goal with
   end
 end.
 
-Goal ($\#0#100) == #100.
+Goal ($ \ #0 #100) == #100.
   reduct PRoot.
   reflexivity.
 Qed.
@@ -371,15 +286,49 @@ Qed.
 Ltac common_reduct := match goal with
 | |- (?a == ?b) =>
   match eval compute in (leftmost_outermost_step a) with
-  | Some (?a_reduct, ?a_route) => transitivity a_reduct; [ apply CStep; exists a_route; reflexivity | ]
+  | Some (?a_reduct, ?a_path) => transitivity a_reduct; [ apply CStep; exists a_path; reflexivity | ]
   | None => idtac
   end;
   symmetry;
   match eval compute in (leftmost_outermost_step b) with
-  | Some (?b_reduct, ?b_route) => transitivity b_reduct; [ apply CStep; exists b_route; reflexivity | ]
+  | Some (?b_reduct, ?b_path) => transitivity b_reduct; [ apply CStep; exists b_path; reflexivity | ]
   | None => idtac
   end;
   symmetry;
   try reflexivity;
   try common_reduct
 end.
+
+Add Parametric Morphism: Abs with
+  signature beta_equiv ==>
+    beta_equiv
+  as beta_mor_abs.
+Proof.
+  intros.
+  unfold "==" in *.
+  induction H.
+  - apply CStep.
+    unfold beta_step in *.
+    destruct H.
+    exists (PAbs x0).
+    unfold beta; fold beta.
+    now rewrite H.
+  - apply CRefl.
+  - now apply CSym.
+  - apply CTrans with (x' := (\ x')); easy.
+Qed.
+
+
+Add Parametric Morphism: App with
+  signature beta_equiv ==>
+    beta_equiv ==>
+    beta_equiv
+  as beta_mor_app.
+Proof.
+  intros.
+  induction x, y.
+  (* The new definition of beta using option term doesn't really allow this *)
+  - Admitted.
+
+Definition beta_equiv (p p': term) :=
+  apply 100 leftmost_outermost_step p = apply 100 leftmost_outermost_step p.
