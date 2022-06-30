@@ -1,44 +1,148 @@
 Require Import Coq.Arith.EqNat.
+Require Import Coq.Arith.PeanoNat.
 
 Require Import Basics.
 
-(* replace_at l v 0 replaces all first-level instances of #0 with v in l *)
-(* every time we enter an abstraction, we increase n by 1 *)
-Fixpoint replace_at (l: term) (v: term) (n: nat): term :=
-  match l with
-  | #n' => if beq_nat n n' then v else #n'
-  | \p => \(replace_at p v (S n))
-  | $ p q => $ (replace_at p v n) (replace_at q v n)
-  end
-.
 
-Module test_replace_at.
-  Definition test: term := replace_at (\#1) (\#4) 0.
-  Compute test. (* -> \ (\ # 4) *)
-End test_replace_at.
+Require Import Coq.Arith.Compare_dec.
 
-(* Elementary beta step, only works on terms of the form (\x) $ y *)
-Definition beta (p: term): term :=
+Fixpoint increase_free_variables (p: term) (increment level: nat): term :=
   match p with
-  | #n => p
-  | \q => p
-  | $ q r => match q with
-    | #_ => p
-    | \s => replace_at s r 0 (* Replace the variable with q *)
-    | $ _ _ => p
-    end
+  | #n => if (lt_dec n level) (* if n < level *)
+    then #n (* #n was bound, leave it as it is *)
+    else #(n + increment) (* #n was free, must increase it *)
+  | \q => \(increase_free_variables q increment (S level))
+  | $ q r => $ (increase_free_variables q increment level) (increase_free_variables r increment level)
   end
 .
 
-Module test_beta.
-  Definition test := $ (\\#1) (\#7).
-  Compute test.
-  Compute beta test.
-  Definition expr: term := $ $ $ if_then_else lc_true #10 #20.
-  Compute expr.
-  (* This doesn't reduce because the outermost application (if_then_else $ (... $ ...)) can't reduce *)
-  Compute beta expr.
-End test_beta.
+(* replace l v 0 replaces all first-level instances of #0 with v in l *)
+(* every time we enter an abstraction, we increase n by 1 *)
+(* level: abstraction level at which we are *)
+Fixpoint replace (body argument: term) (level: nat): term :=
+  match body with
+  | #n => match level ?= n with
+    | Lt => #(n - 1) (* #n is a free variable in body, we decrease it by 1 because we are removing an abstraction *)
+    | Eq => increase_free_variables argument n 0 (* #n is the variable to replace, remember to increase the free vars in argument! *)
+    | Gt => #n (* #n is bound in body *)
+    end
+  | \p => \(replace p argument (S level))
+  | $ p q => $ (replace p argument level) (replace q argument level)
+  end
+.
+
+Definition prova := $ (\ \ $ ($ #3 #1) (\ $ #0 #2)) (\ $ #4 #0).
+Compute replace (\ $ ($ #3 #1) (\ $ #0 #2)) (\ $ #4 #0) 0.
+(* The final result should be \ $ $ (# 2) (\ $ (# 5) (# 0)) (\ $ (# 0) (\ $ (# 6) (# 0))) *)
+Compute replace (\ $ ($ #3 #1) (\ \ $ #1 #3)) (\ $ #4 #0) 0.
+
+Module test_replace.
+  Definition test: term := replace (\#1) (\#4) 0.
+  Compute test. (* -> \ (\ # 4) *)
+End test_replace.
+
+Inductive index: term -> Type :=
+| Root: forall t, index t
+| SubAbs: forall t, index t -> index (\t)
+| SubAppLeft: forall t t', index t -> index ($ t t')
+| SubAppRight: forall t t', index t -> index ($ t' t)
+.
+
+(* TODO fix level of anchor for it to work, Cmd+F "Root _" *)
+Notation "⚓" := (Root _) (at level 50). (* Anchor *)
+Notation "§ x" := (SubAbs _ x) (at level 40).
+Notation "← x" := (SubAppLeft _ _ x) (at level 40).
+Notation "→ x" := (SubAppRight _ _ x) (at level 40).
+
+
+Definition t := \\ $ (\#0) #1.
+Definition t_: index t := Root _.
+Definition t_0: index t := SubAbs _ (Root _).
+Definition t_0_0: index t := SubAbs _ (SubAbs _ (Root _)).
+Definition t_0_0_1: index t := (SubAbs _ (SubAbs _ (SubAppRight _ _ (Root _)))).
+
+Definition t_0_0_1': index t := § § → ⚓.
+
+Fixpoint subterm (p: term) (i: index p): term :=
+  match i with
+  | Root p => p
+  | SubAbs q j => subterm q j
+  | SubAppLeft q r j => subterm q j
+  | SubAppRight q r j => subterm q j
+  end
+.
+
+Compute subterm t t_0_0_1'.
+
+Compute subterm t t_.
+
+(* Observe that it's technically not enough to just check whether
+beta changes a term (e.g. beta p ~= p): there are redeces that return
+the same term, e.g. omega omega -> omega omega *)
+(* Definition is_redex (p: term) (i: index p): Prop :=
+  match p with
+  | $ (\q) r => True
+  | _ => False
+  end
+. *)
+
+
+(* TODO do we even need this? *)
+(* Definition redex (p: term) := {i : index p & is_redex p i}. *)
+
+
+(* Definition redex (p: term) := exists (i: index p), is_redex p i. *)
+(* Compute beta t { t_0_0 | proof_that_that_index_is_a_redex } . *)
+
+
+
+Inductive route :=
+| PRoot
+| PAbs: route -> route
+| PLeft: route -> route
+| PRight: route -> route
+.
+
+Fixpoint beta (p: term) (rt: route): option term :=
+  match p, rt with
+
+  | #n, _ => None (* No reduction/Invalid path *)
+
+  | \q, PAbs rt' => let q' := beta q rt' in
+    match q' with
+    | Some q'' => Some (\q'')
+    | None => None
+    end
+  | \q, _ => None (* Invalid path *)
+
+  | $ (\q) r, PRoot => Some (replace q r 0)
+  | $ q r, PLeft rt' => let q' := beta q rt' in
+    match q' with
+    | Some q'' => Some $ q'' r
+    | None => None
+    end
+  | $ q r, PRight rt' => let r' := beta r rt' in
+    match r' with
+    | Some r'' => Some $ q r''
+    | None => None
+    end
+  | $ _ _, _ => None (* Invalid path *)
+
+  end
+.
+
+
+
+Definition beta_step (p p': term): Prop :=
+  exists (rt: route), beta p rt = Some p'.
+
+Lemma test: beta_step t (\\#1).
+Proof.
+  unfold beta_step.
+  exists (PAbs (PAbs PRoot)).
+  reflexivity.
+Qed.
+
 
 (* Leftmost-outermost is a normalizing reduction strategy for lc *)
 (* i.e. in each step the leftmost of the outermost redexes is contracted, where an outermost redex is a redex not contained in any redexes *)
@@ -46,56 +150,23 @@ End test_beta.
 (* in lc a redex is a lambda abstraction applied to a term, so "(\ ...) $ ..." *)
 (* \#0 $ \#0 is a redex that reduces to \#0 *)
 
-(* ASK how do I do leftmost-outermost? I need to walk the tree
-recursively but stop at the FIRST application of beta *)
-
-(* fixpoint returning term + bool marking whether we have reduced *)
-
-Fixpoint leftmost_outermost_step_aux (p: term): term * bool :=
-  match p with
-  | #n => (p, false)
-  | \q => let (q', b) := leftmost_outermost_step_aux q in (\q', b)
-  | $ q r => match q with
-    | #n => let (r', b) := leftmost_outermost_step_aux r in ($ (#n) r', b)
-    | \s => (replace_at s r 0, true)
-    | $ s t => let (s', bs) := leftmost_outermost_step_aux q in
-               let (t', bt) := leftmost_outermost_step_aux t in
-      if bs then ($ s' t, bs) else ($ s t', bt)
-    end
-  end
-.
-
-Definition leftmost_outermost_step (p: term): term :=
-  let (p', b) := leftmost_outermost_step_aux p in p'
-.
-
-Fixpoint leftmost_outermost_aux (p: term) (n: nat): term :=
-  match n with
-  | 0 => p
-  | S m => leftmost_outermost_aux (leftmost_outermost_step p) m
-  end
-.
-
-Module test_leftmost_outermost_aux.
-  Definition expr: term := $ $ $ if_then_else lc_true #10 #20.
-  Compute leftmost_outermost_aux expr 0.
-  Compute leftmost_outermost_aux expr 1.
-  Compute leftmost_outermost_aux expr 2.
-  Compute leftmost_outermost_aux expr 3.
-  Compute leftmost_outermost_aux expr 4.
-  Compute leftmost_outermost_aux expr 5. (* -> # 10 *)
-  (* TODO this is not right, fix defn *)
-End test_leftmost_outermost_aux.
-
+(* TODO redefine these reduction strategies to use beta() *)
 (* A single step of parallel outermost reduction *)
-Fixpoint parallel_outermost_step (p: term): term :=
+Fixpoint parallel_outermost_step (p: term): option term :=
   match p with
-  | #n => p
-  | \q => \(parallel_outermost_step q)
-  | $ q r => match q with
-    | #n => $ (parallel_outermost_step q) (parallel_outermost_step r)
-    | \s => replace_at s r 0 (* Replace the variable with q *)
-    | $ s t => $ (parallel_outermost_step q) (parallel_outermost_step r)
+  | #n => None
+  | \q => let q' := parallel_outermost_step q in match q' with
+    | None => None
+    | Some q'' => Some (\q'')
+    end
+  | $ (\q) r => beta p (PRoot)
+  | $ q r => let q' := parallel_outermost_step q in
+    let r' := parallel_outermost_step r in
+    match (q', r') with
+    | (None, Some r'') => Some ($ q r'')
+    | (Some q'', None) => Some ($ q'' r)
+    | (Some q'', Some r'') => Some ($ q'' r'')
+    | (None, None) => None
     end
   end
 .
@@ -103,7 +174,10 @@ Fixpoint parallel_outermost_step (p: term): term :=
 Fixpoint parallel_outermost_aux (p: term) (n: nat): term :=
   match n with
   | 0 => p
-  | S m => parallel_outermost_aux (parallel_outermost_step p) m
+  | S m => let p' := parallel_outermost_step p in match p' with
+    | Some p'' => parallel_outermost_aux p'' m
+    | None => p (* No further reduction? Just return the term as-is *)
+    end
   end
 .
 
@@ -140,6 +214,9 @@ Module test_omega.
   Definition omega := (\$#0#0).
   Compute parallel_outermost_step omega.
 
+  Definition omega_omega := $ omega omega.
+  Compute parallel_outermost_step omega_omega.
+
   Definition growing := $(\$$#0#0#0)(\$$#0#0#0).
   Compute parallel_outermost_step growing.
 
@@ -154,21 +231,6 @@ End test_omega.
 Require Import Coq.Lists.List.
 Import ListNotations.
 
-
-(* List of all possible 1-step beta reducts of p *)
-Fixpoint beta_reducts (p: term): list term :=
-  let others := (match p with
-  | #n => []
-  | \q => map (fun (t: term) => \ t) (beta_reducts q)
-  | $ q r => map (fun (t: term) => $ t r) (beta_reducts q) ++ map (fun (t: term) => $ q t) (beta_reducts r)
-  end) in
-    if term_eq_dec (beta p) p then others else beta p :: others
-.
-
-(* p ->_\beta p' *)
-Definition beta_step (p p': term): Prop :=
-  In p' (beta_reducts p)
-.
 
 Inductive closure {X: Type} (P: X -> X -> Prop): X -> X -> Prop :=
 (* In the base case, every element of X is related to itself. *)
@@ -219,7 +281,9 @@ Proof.
   induction H.
   - apply CStep.
     unfold beta_step in *.
-    simpl.
+    Admitted.
+    (* TODO IMPORTANT fix this *)
+    (* simpl.
     destruct (term_eq_dec (\x) (\x)).
     + induction (beta_reducts x).
       * now exfalso.
@@ -233,93 +297,89 @@ Proof.
   - apply CRefl.
   - now apply CSym.
   - now apply CTrans with (x' := \ x').
-Qed.
+Qed. *)
 
 Add Parametric Morphism: App with
   signature beta_equiv ==>
     beta_equiv ==>
     beta_equiv
   as beta_mor_app.
-Admitted. (* TODO *)
+Admitted. (* TODO IMPORTANT complete this *)
 
-Fixpoint acc_step (p: term) (depth: nat): list (list term) :=
-  match depth with
-  | 0 => [[p]]
-  | S n => let old_reducts := acc_step p n in
-            let candidates := filter (fun (l: list term) => beq_nat (length l) (S n)) old_reducts in
-            (* TODO maybe change hd to hd_error *)
-            (* TODO can be made more efficient by filtering duplicates out *)
-            old_reducts ++ flat_map (fun (candidate: list term) => map (fun reduct => (reduct :: candidate)) (beta_reducts (hd (#0) candidate))) candidates
-  end
-.
-
-(* Compute acc_step ($ $ $ if_then_else lc_true #10 #20) 0.
-Compute acc_step ($ $ $ if_then_else lc_true #10 #20) 1.
-Compute acc_step ($ $ $ if_then_else lc_true #10 #20) 2.
-Compute acc_step ($ $ $ if_then_else lc_true #10 #20) 3.
-Compute acc_step ($ $ $ if_then_else lc_true #10 #20) 4. *)
-
-Fixpoint cartesian {A B: Type} (l: list A) (m: list B): list (A * B) :=
-  match l with
-  | [] => []
-  | a :: l' => map (fun b => (a, b)) m ++ cartesian l' m
-  end
-.
-
-Definition common_reducts (l m: list (list term)): (list term * list term) :=
-  hd ([], []) (filter (fun (x: list term * list term) => let (a, b) := x in term_beq (hd (#0) a) (hd (#0) b)) (cartesian l m))
-.
-
-Compute (common_reducts (acc_step ($ (\ #0) $ (\ # 10) (# 20)) 10) (acc_step (#10) 10)).
-
-Ltac common_reduct_aux l :=
-  idtac l;
-  match eval compute in l with
-  | nil => idtac
-  | ?a :: ?l' => apply CTrans with (x' := a); (* TODO rewrite this using next_reduct *)
-                [ apply CStep; unfold beta_step; simpl; left; reflexivity | ];
-                common_reduct_aux l'
-  end
-.
-
-
-Definition COMMON_REDUCT_MAX_DEPTH := 10.
-Ltac common_reduct := match goal with
-  | |- (?a == ?b) =>
-    unfold "==";
-    match eval compute in (common_reducts (acc_step a COMMON_REDUCT_MAX_DEPTH) (acc_step b COMMON_REDUCT_MAX_DEPTH)) with
-    | (?k, ?l) => let k' := eval compute in (tl (rev k)) in (common_reduct_aux k');
-                  apply CSym;
-                  let l' := eval compute in (tl (rev l)) in (common_reduct_aux l');
-            apply CRefl
-    (* TODO add second matching case | None => ... and make it work *)
-    end
-end.
-
-
-Ltac next_reduct p := apply CTrans with (x' := p);
-[ apply CStep; unfold beta_step; simpl; now left | ].
-
-Module test_beta_equiv.
-  Definition expr: term := $ $ $ if_then_else lc_true #10 #20.
-  Lemma test: beta_equiv expr (#10).
-  Proof.
-    unfold "==".
-    unfold expr.
-    unfold if_then_else, lc_true.
-    apply CTrans with (x' := $ $ (\ (\ $ $ (\ (\ # 1)) (# 1) (# 0))) (# 10) (# 20));
-    [ apply CStep; unfold beta_step; simpl; now left | ].
-    apply CTrans with (x' := $ (\ $ $ (\ (\ # 1)) (# 10) (# 0)) (# 20));
-    [ apply CStep; unfold beta_step; simpl; now left | ].
-    apply CTrans with (x' := $ $ (\ (\ # 1)) (# 10) (# 20));
-    [ apply CStep; unfold beta_step; simpl; now left | ].
-    apply CTrans with (x' := $ (\ # 10) (# 20));
-    [ apply CStep; unfold beta_step; simpl; now left | ].
-    apply CTrans with (x' := # 10);
-    [ apply CStep; unfold beta_step; simpl; now left | ].
-    apply CRefl.
-  Qed.
-End test_beta_equiv.
 
 (* TODO idea write a tactic for defining a reduction path
 something that simplifies this process above ^ of stating transitivity paths *)
+
+
+
+(* Fixpoint build_indices (p: term): list route :=
+  match p with
+  | #n => [ PRoot ]
+  | \q => PRoot :: map PAbs (build_indices q)
+  | $ q r => PRoot :: map PLeft (build_indices q) ++ map PRight (build_indices r)
+  end
+. *)
+
+(* Compute build_indices (\\$#0#1). *)
+
+Fixpoint leftmost_outermost_step (p: term): option (term * route) :=
+  match p with
+  | #n => None
+  | \q => let q' := leftmost_outermost_step q in match q' with
+    | None => None
+    | Some (q'', rt) => Some (\q'', PAbs rt)
+    end
+  | $ (\q) r => let p' := beta p (PRoot) in
+    match p' with
+    | Some p'' => Some (p'', PRoot)
+    | None => None
+    end
+  | $ q r => let q' := leftmost_outermost_step q in
+    let r' := leftmost_outermost_step r in
+    match (q', r') with
+    | (Some (q'', rt), _) => Some ($ q'' r, PLeft rt)
+    | (None, Some (r'', rt)) => Some ($ q r'', PRight rt)
+    | (None, None) => None
+    end
+  end
+.
+
+
+
+Module test_leftmost_outermost_step.
+  Definition expr: term := $ ($ ($ if_then_else lc_true) #10) #20.
+  Compute expr.
+  Compute leftmost_outermost_step expr.
+End test_leftmost_outermost_step.
+
+
+Ltac reduct rt := match goal with
+| |- (?a == ?b) =>
+  match eval compute in (beta a rt) with
+  | Some ?a_reduct => transitivity a_reduct; [ apply CStep; exists rt; reflexivity | ]
+  | None => fail
+  end
+end.
+
+Goal ($\#0#100) == #100.
+  reduct PRoot.
+  reflexivity.
+Qed.
+
+
+(* TODO fix this for some reason it doesn't stop at normal forms *)
+Ltac common_reduct := match goal with
+| |- (?a == ?b) =>
+  match eval compute in (leftmost_outermost_step a) with
+  | Some (?a_reduct, ?a_route) => transitivity a_reduct; [ apply CStep; exists a_route; reflexivity | ]
+  | None => idtac
+  end;
+  symmetry;
+  match eval compute in (leftmost_outermost_step b) with
+  | Some (?b_reduct, ?b_route) => transitivity b_reduct; [ apply CStep; exists b_route; reflexivity | ]
+  | None => idtac
+  end;
+  symmetry;
+  try reflexivity;
+  try common_reduct
+end.
