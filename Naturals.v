@@ -33,6 +33,8 @@ Compute beta $ (\ #23) (#0) PRoot.
 
 Compute let n:=2 in (increase_free_variables (encode_aux n) 2 2, encode_aux n).
 
+
+(* Some lemmas for the main thms *)
 Lemma aux (n: nat): increase_free_variables (encode_aux n) 2 2 = encode_aux n.
 Proof.
   induction n.
@@ -42,7 +44,6 @@ Proof.
     now rewrite IHn.
 Qed.
 
-
 Lemma aux' (n: nat): increase_free_variables (encode_aux n) 1 2 = encode_aux n.
 Proof.
   induction n.
@@ -51,8 +52,6 @@ Proof.
     simpl.
     now rewrite IHn.
 Qed.
-
-
 
 Lemma aux'' (n: nat): increase_free_variables (encode_aux n) 0 2 = encode_aux n.
 Proof.
@@ -106,9 +105,7 @@ Proof.
         -- now rewrite lemma_replace.
 Qed.
 
-
-
-
+(* Sx = Sy -> x = y  *)
 Lemma encode_inj: forall (n m: nat), encode n == encode m -> n = m.
 Proof.
   intros.
@@ -132,9 +129,7 @@ Proof.
   reflexivity.
 Qed.
 
-
-(* TODO explain possible pitfall: \ x == \ #0 f_equal x == #0 !!! out of context #0 is nothing *)
-
+(* x + 0 = 0 *)
 Lemma succ_zero: forall (x: nat), ~(($ succ (encode x)) == encode 0).
 Proof.
   intro.
@@ -143,22 +138,10 @@ Proof.
   now apply encode_inj in H.
 Qed.
 
-
-
-(* ASK associativity is weird as hell, why does Coq want THOSE parentheses? *)
-(* Definition plus: term := \\\\ $ ($ #3 #1) $ $ #2 #1 #0. *)
-
 Definition plus: term := \\ $ $ (#1) succ (#0).
 
 
-(* Lemma add_nat: forall (x y: nat), $ $ plus (encode x) (encode y) == encode (x + y).
-Proof.
-  intros.
-  induction x.
-  -  *)
-
-
-
+(* More useful lemmas *)
 Lemma repl_lemma' (n: nat) (p: term): replace (encode_aux n) p 3 = encode_aux n.
 Proof.
   induction n.
@@ -181,8 +164,7 @@ Proof.
     apply IHn.
 Qed.
 
-
-
+(* x + 0 = x *)
 Lemma zero_neutral: forall (n: nat), $ $ plus (encode n) (encode 0) == encode n.
 Proof.
   intros.
@@ -269,6 +251,7 @@ Proof.
     reflexivity.
 Qed.
 
+(* Automate some work *)
 Ltac step p rt := transitivity p;
   [ apply CStep;
     exists rt;
@@ -282,7 +265,7 @@ Ltac step p rt := transitivity p;
     try apply aux';
     try apply aux'' | ].
 
-
+(* x + S(y) = S(x + y) *)
 Lemma plus_succ (n m: nat): $ $ plus (encode n) ($ succ (encode m)) == $ succ $ $ plus (encode n) (encode m).
 Proof.
   induction m.
@@ -346,6 +329,7 @@ Qed.
 
 Definition mult := \\$ $ (#1) ($ plus #0) (encode 0).
 
+(* x * 0 = 0 *)
 Lemma mult_nil (n: nat): $ $ mult (encode n) (encode 0) == encode 0.
 Proof.
   unfold mult.
@@ -430,7 +414,7 @@ Proof.
       apply IHn.
 Qed.
 
-
+(* x * S(y) = x * y + x *)
 Lemma mult_plus (n m: nat): $ $ mult (encode n) ($ succ (encode m)) == $ $ plus $ $ mult (encode n) (encode m) (encode n).
 Proof.
   induction n, m.
