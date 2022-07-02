@@ -57,7 +57,6 @@ Module test_applicator_closed.
   |}.
   Next Obligation. (* closed applicator *)
     compute.
-    (* ASK how to simplify/unroll this? = unfold closed_aux*)
     split.
     - simpl.
       apply le_S.

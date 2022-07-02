@@ -22,7 +22,6 @@ Definition encode (n: nat): term :=
 .
 
 
-(* TODO fix this notation? *)
 Definition succ: term :=
   \\\ $ (#1) ($ ($ (#2) (#1)) (#0))
 .
@@ -105,7 +104,7 @@ Proof.
         -- now rewrite lemma_replace.
 Qed.
 
-(* Sx = Sy -> x = y  *)
+(* Sx = Sy -> x = y *)
 Lemma encode_inj: forall (n m: nat), encode n == encode m -> n = m.
 Proof.
   intros.
@@ -114,11 +113,11 @@ Proof.
   - easy.
   - unfold encode in H.
     unfold encode_aux in H; fold encode_aux in H.
+    (* TODO should be easy, haven't had time *)
     Admitted.
 
 Lemma succ_inj: forall (x y: nat), ($ succ (encode x)) == ($ succ (encode y)) -> (encode x) == (encode y).
 Proof.
-  (* TODO create a tactic to rewrite term_nats into encode n? *)
   intros.
   rewrite succ_encode in H.
   rewrite succ_encode in H.

@@ -144,13 +144,6 @@ Definition parallel_outermost (p: term): term :=
   parallel_outermost_aux p MAX_BETA
 .
 
-(* ASK: any idea of how to approach this? Fixpoint with accumulator? *)
-(* Ideally: apply beta MAX_BETA times or stop if the same term is reached twice *)
-(* Most efficient way to do this would be to hash every term we go through and compare
-the hash at every stage with all previous ones *)
-(* The alternative is to store every visited term and compare them *)
-(* Seems too expensive *)
-
 Module test_parallel_outermost.
   Definition expr: term := $ $ $ if_then_else lc_true #10 #20.
   Compute expr.
@@ -216,16 +209,6 @@ Add Parametric Relation: term beta_equiv
   as beta_eq.
 
 Require Import Coq.Setoids.Setoid.
-
-
-
-(* TODO IMPORTANT complete this *)
-
-
-(* TODO idea write a tactic for defining a reduction path
-something that simplifies this process above ^ of stating transitivity paths *)
-
-
 
 (* Fixpoint build_indices (p: term): list path :=
   match p with
@@ -329,6 +312,3 @@ Proof.
   induction x, y.
   (* The new definition of beta using option term doesn't really allow this *)
   - Admitted.
-
-Definition beta_equiv (p p': term) :=
-  apply 100 leftmost_outermost_step p = apply 100 leftmost_outermost_step p.
